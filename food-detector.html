@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0f1e" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Food Detector</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #080c18;
+      --surface:   #0d1427;
+      --card:      #111828;
+      --border:    rgba(255,255,255,0.07);
+      --accent:    #4f8ef7;
+      --accent-dim:rgba(79,142,247,0.12);
+      --green:     #22d07a;
+      --green-dim: rgba(34,208,122,0.12);
+      --red:       #f75a5a;
+      --red-dim:   rgba(247,90,90,0.12);
+      --text:      #e8edf8;
+      --muted:     #5a6888;
+      --subtle:    #1e2840;
+    }
+
+    html, body {
+      height: 100%; width: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Outfit', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    /* Subtle radial glow behind camera */
+    body::after {
+      content: '';
+      position: fixed;
+      top: 20%; left: 50%;
+      transform: translateX(-50%);
+      width: 340px; height: 340px;
+      background: radial-gradient(circle, rgba(79,142,247,0.07) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ──────────────────────────────────────
+       LAYOUT
+    ────────────────────────────────────── */
+    #app {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100%;
+      width: 100%;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── STATUS BAR SPACER ── */
+    .status-spacer {
+      height: env(safe-area-inset-top, 0px);
+      background: var(--bg);
+    }
+
+    /* ──────────────────────────────────────
+       HEADER
+    ────────────────────────────────────── */
+    header {
+      padding: 14px 20px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, #4f8ef7, #7b5cf0);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem;
+      box-shadow: 0 4px 14px rgba(79,142,247,0.3);
+      flex-shrink: 0;
+    }
+
+    .header-titles {
+      display: flex;
+      flex-direction: column;
+      gap: 0px;
+    }
+
+    .app-name {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.15rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      color: var(--text);
+      line-height: 1.1;
+    }
+
+    .app-tagline {
+      font-size: 0.68rem;
+      font-weight: 400;
+      color: var(--muted);
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+
+    .ai-badge {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(79,142,247,0.2);
+      border-radius: 20px;
+      padding: 5px 10px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: 0.5px;
+    }
+
+    .ai-dot {
+      width: 6px; height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: blink 2s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    /* ──────────────────────────────────────
+       VIEWFINDER
+    ────────────────────────────────────── */
+    #viewfinder {
+      position: relative;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #camera-feed, #captured-img {
+      position: absolute;
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+
+    #captured-img { display: none; }
+    #canvas { display: none; }
+
+    /* Overlay vignette */
+    .vignette {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* Finder frame */
+    .finder-frame {
+      position: absolute;
+      inset: 28px;
+      z-index: 10;
+      pointer-events: none;
+      border-radius: 4px;
+    }
+
+    /* Corner pieces */
+    .corner {
+      position: absolute;
+      width: 22px; height: 22px;
+    }
+    .corner::before, .corner::after {
+      content: ''; position: absolute;
+      background: rgba(255,255,255,0.9);
+      border-radius: 1px;
+    }
+    .corner.tl { top: 0; left: 0; }
+    .corner.tr { top: 0; right: 0; }
+    .corner.bl { bottom: 0; left: 0; }
+    .corner.br { bottom: 0; right: 0; }
+
+    .corner.tl::before { top: 0; left: 0; width: 2px; height: 100%; }
+    .corner.tl::after  { top: 0; left: 0; width: 100%; height: 2px; }
+    .corner.tr::before { top: 0; right: 0; width: 2px; height: 100%; }
+    .corner.tr::after  { top: 0; right: 0; width: 100%; height: 2px; }
+    .corner.bl::before { bottom: 0; left: 0; width: 2px; height: 100%; }
+    .corner.bl::after  { bottom: 0; left: 0; width: 100%; height: 2px; }
+    .corner.br::before { bottom: 0; right: 0; width: 2px; height: 100%; }
+    .corner.br::after  { bottom: 0; right: 0; width: 100%; height: 2px; }
+
+    /* Grid lines */
+    .grid-lines {
+      position: absolute;
+      inset: 28px;
+      z-index: 6;
+      pointer-events: none;
+      opacity: 0.06;
+      background-image:
+        linear-gradient(to right, white 1px, transparent 1px),
+        linear-gradient(to bottom, white 1px, transparent 1px);
+      background-size: 33.33% 33.33%;
+    }
+
+    /* Scan line */
+    .scan-line {
+      position: absolute;
+      left: 28px; right: 28px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent 0%, rgba(79,142,247,0.7) 30%, rgba(79,142,247,0.9) 50%, rgba(79,142,247,0.7) 70%, transparent 100%);
+      z-index: 11;
+      animation: scan 3.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+      pointer-events: none;
+      filter: blur(0.5px);
+    }
+
+    @keyframes scan {
+      0%   { top: 28px;  opacity: 0; }
+      5%   { opacity: 1; }
+      95%  { opacity: 1; }
+      100% { top: calc(100% - 28px); opacity: 0; }
+    }
+
+    /* Focus indicator */
+    .focus-ring {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 64px; height: 64px;
+      border: 1.5px solid rgba(255,255,255,0.5);
+      border-radius: 50%;
+      z-index: 12;
+      pointer-events: none;
+      animation: focusPulse 3s ease-in-out infinite;
+    }
+
+    .focus-ring::after {
+      content: '';
+      position: absolute;
+      inset: 8px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    @keyframes focusPulse {
+      0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
+      50%       { opacity: 0.8; transform: translate(-50%, -50%) scale(0.9); }
+    }
+
+    /* ── RESULT OVERLAY ── */
+    #result-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      z-index: 20;
+      padding-bottom: 24px;
+    }
+
+    #result-overlay.show { display: flex; }
+
+    #result-overlay::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to top, rgba(8,12,24,0.95) 0%, rgba(8,12,24,0.3) 50%, transparent 100%);
+    }
+
+    .result-panel {
+      position: relative;
+      width: calc(100% - 32px);
+      max-width: 420px;
+      border-radius: 20px;
+      overflow: hidden;
+      animation: slideUp 0.45s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(60px); opacity: 0; }
+      to   { transform: translateY(0); opacity: 1; }
+    }
+
+    .result-panel.yes {
+      background: rgba(10, 22, 16, 0.95);
+      border: 1px solid rgba(34, 208, 122, 0.3);
+      box-shadow: 0 -8px 60px rgba(34,208,122,0.15), 0 0 0 1px rgba(34,208,122,0.1);
+    }
+
+    .result-panel.no {
+      background: rgba(22, 10, 10, 0.95);
+      border: 1px solid rgba(247, 90, 90, 0.3);
+      box-shadow: 0 -8px 60px rgba(247,90,90,0.15), 0 0 0 1px rgba(247,90,90,0.1);
+    }
+
+    .result-inner {
+      padding: 20px 22px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .result-icon-wrap {
+      width: 56px; height: 56px;
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.8rem;
+      flex-shrink: 0;
+    }
+
+    .result-panel.yes .result-icon-wrap {
+      background: var(--green-dim);
+      border: 1px solid rgba(34,208,122,0.25);
+    }
+
+    .result-panel.no .result-icon-wrap {
+      background: var(--red-dim);
+      border: 1px solid rgba(247,90,90,0.25);
+    }
+
+    .result-info { flex: 1; }
+
+    .result-label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+
+    .result-panel.yes .result-label { color: var(--green); }
+    .result-panel.no  .result-label { color: var(--red); }
+
+    .result-name {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .result-sub {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .result-check {
+      font-size: 1.5rem;
+      flex-shrink: 0;
+    }
+
+    /* Status bar inside result */
+    .result-bar {
+      height: 3px;
+      border-radius: 0 0 20px 20px;
+    }
+
+    .result-panel.yes .result-bar {
+      background: linear-gradient(90deg, var(--green), #00f5a0);
+    }
+
+    .result-panel.no .result-bar {
+      background: linear-gradient(90deg, var(--red), #ff9090);
+    }
+
+    /* ── LOADING ── */
+    #loading {
+      position: absolute;
+      inset: 0;
+      z-index: 30;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      background: rgba(8,12,24,0.8);
+      backdrop-filter: blur(6px);
+    }
+
+    #loading.show { display: flex; }
+
+    .loader-ring {
+      width: 48px; height: 48px;
+      position: relative;
+    }
+
+    .loader-ring::before, .loader-ring::after {
+      content: ''; position: absolute; border-radius: 50%;
+    }
+
+    .loader-ring::before {
+      inset: 0;
+      border: 2px solid rgba(79,142,247,0.15);
+    }
+
+    .loader-ring::after {
+      inset: 0;
+      border: 2px solid transparent;
+      border-top-color: var(--accent);
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #loading .load-text {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    #loading .load-sub {
+      font-size: 0.65rem;
+      color: rgba(90,104,136,0.7);
+      letter-spacing: 0.5px;
+      margin-top: -8px;
+    }
+
+    /* ── NO CAMERA ── */
+    #no-camera {
+      position: absolute;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 32px;
+      text-align: center;
+      background: var(--bg);
+    }
+
+    #no-camera.show { display: flex; }
+
+    .no-cam-icon {
+      width: 64px; height: 64px;
+      background: var(--subtle);
+      border-radius: 18px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.8rem;
+      margin-bottom: 4px;
+    }
+
+    #no-camera h3 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    #no-camera p {
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.6;
+      max-width: 260px;
+    }
+
+    /* ──────────────────────────────────────
+       BOTTOM CONTROLS
+    ────────────────────────────────────── */
+    #controls {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 16px 20px calc(16px + env(safe-area-inset-bottom, 0px));
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Mode indicator */
+    .mode-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .mode-pip {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: all 0.3s;
+    }
+
+    .mode-pip.active {
+      background: var(--accent);
+      width: 18px;
+      border-radius: 3px;
+    }
+
+    /* Main action row */
+    .action-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+    }
+
+    /* Ghost side buttons */
+    .side-btn {
+      width: 46px; height: 46px;
+      border-radius: 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 1.1rem;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .side-btn:active { transform: scale(0.9); background: var(--subtle); }
+    .side-btn.hidden { visibility: hidden; pointer-events: none; }
+
+    /* Shutter button */
+    #btn-capture {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      background: var(--text);
+      border: none;
+      cursor: pointer;
+      position: relative;
+      transition: transform 0.15s;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+
+    #btn-capture::before {
+      content: '';
+      position: absolute;
+      inset: -5px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.15);
+    }
+
+    #btn-capture::after {
+      content: '';
+      width: 60px; height: 60px;
+      background: white;
+      border-radius: 50%;
+      border: 2px solid rgba(0,0,0,0.06);
+    }
+
+    #btn-capture:active { transform: scale(0.9); }
+    #btn-capture:disabled { opacity: 0.3; pointer-events: none; }
+
+    /* Analyze button — full width pill */
+    #btn-analyze {
+      width: 100%;
+      height: 52px;
+      border-radius: 14px;
+      background: var(--accent);
+      border: none;
+      cursor: pointer;
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: 0.3px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 6px 24px rgba(79,142,247,0.35);
+      transition: all 0.2s;
+    }
+
+    #btn-analyze:active { transform: scale(0.97); box-shadow: 0 2px 10px rgba(79,142,247,0.2); }
+    #btn-analyze:disabled { opacity: 0.4; pointer-events: none; }
+
+    #btn-analyze .analyze-icon {
+      width: 22px; height: 22px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.85rem;
+    }
+
+    /* Retake button */
+    #btn-retake {
+      width: 100%;
+      height: 44px;
+      border-radius: 12px;
+      background: transparent;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--muted);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    #btn-retake:active { background: var(--subtle); }
+    #btn-retake:disabled { opacity: 0.4; pointer-events: none; }
+
+    /* Hint text */
+    .hint-text {
+      text-align: center;
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.3px;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="header-left">
+      <div class="logo-icon">🍽️</div>
+      <div class="header-titles">
+        <span class="app-name">Food Detector</span>
+        <span class="app-tagline">Visual AI Recognition</span>
+      </div>
+    </div>
+    <div class="ai-badge">
+      <span class="ai-dot"></span>
+      AI
+    </div>
+  </header>
+
+  <div id="viewfinder">
+    <video id="camera-feed" autoplay playsinline muted></video>
+    <img id="captured-img" alt="captured" />
+    <canvas id="canvas"></canvas>
+
+    <div class="vignette"></div>
+    <div class="grid-lines"></div>
+    <div class="scan-line"></div>
+
+    <div class="finder-frame">
+      <div class="corner tl"></div>
+      <div class="corner tr"></div>
+      <div class="corner bl"></div>
+      <div class="corner br"></div>
+    </div>
+
+    <div class="focus-ring" id="focus-ring"></div>
+
+    <!-- Result -->
+    <div id="result-overlay">
+      <div class="result-panel" id="result-panel">
+        <div class="result-inner">
+          <div class="result-icon-wrap" id="result-icon-wrap">
+            <span id="result-emoji"></span>
+          </div>
+          <div class="result-info">
+            <div class="result-label" id="result-label"></div>
+            <div class="result-name" id="result-name"></div>
+            <div class="result-sub" id="result-sub"></div>
+          </div>
+          <span class="result-check" id="result-check"></span>
+        </div>
+        <div class="result-bar"></div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading">
+      <div class="loader-ring"></div>
+      <span class="load-text">Analisando</span>
+      <span class="load-sub">IA processando imagem...</span>
+    </div>
+
+    <!-- No camera -->
+    <div id="no-camera">
+      <div class="no-cam-icon">📵</div>
+      <h3>Câmera indisponível</h3>
+      <p>Permita o acesso à câmera nas configurações do seu navegador e recarregue a página.</p>
+    </div>
+  </div>
+
+  <div id="controls">
+    <!-- Mode pips -->
+    <div class="mode-row" id="mode-row">
+      <div class="mode-pip active"></div>
+      <div class="mode-pip"></div>
+      <div class="mode-pip"></div>
+    </div>
+
+    <!-- Shutter row (camera mode) -->
+    <div class="action-row" id="shutter-row">
+      <button class="side-btn hidden" id="btn-gallery">🖼️</button>
+      <button id="btn-capture" onclick="capture()" title="Capturar foto"></button>
+      <button class="side-btn" id="btn-flip" onclick="flipCamera()" title="Alternar câmera">🔄</button>
+    </div>
+
+    <p class="hint-text" id="hint-text">Aponte para um alimento e pressione para capturar</p>
+
+    <!-- Analyze button (review mode) -->
+    <button id="btn-analyze" onclick="analyze()">
+      <span class="analyze-icon">🔍</span>
+      Analisar com IA
+    </button>
+
+    <!-- Retake button (review mode) -->
+    <button id="btn-retake" onclick="retake()">← Tirar outra foto</button>
+  </div>
+
+</div>
+
+<script>
+  const video         = document.getElementById('camera-feed');
+  const canvas        = document.getElementById('canvas');
+  const capturedImg   = document.getElementById('captured-img');
+  const btnCapture    = document.getElementById('btn-capture');
+  const btnRetake     = document.getElementById('btn-retake');
+  const btnAnalyze    = document.getElementById('btn-analyze');
+  const loading       = document.getElementById('loading');
+  const resultOverlay = document.getElementById('result-overlay');
+  const resultPanel   = document.getElementById('result-panel');
+  const resultEmoji   = document.getElementById('result-emoji');
+  const resultLabel   = document.getElementById('result-label');
+  const resultName    = document.getElementById('result-name');
+  const resultSub     = document.getElementById('result-sub');
+  const resultCheck   = document.getElementById('result-check');
+  const noCam         = document.getElementById('no-camera');
+  const scanLine      = document.querySelector('.scan-line');
+  const focusRing     = document.getElementById('focus-ring');
+  const shutterRow    = document.getElementById('shutter-row');
+  const hintText      = document.getElementById('hint-text');
+  const modeRow       = document.getElementById('mode-row');
+
+  let capturedBase64 = null;
+  let currentStream  = null;
+  let facingMode     = 'environment';
+
+  async function startCamera(facing = 'environment') {
+    if (currentStream) {
+      currentStream.getTracks().forEach(t => t.stop());
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+      video.srcObject = stream;
+      currentStream = stream;
+    } catch (e) {
+      noCam.classList.add('show');
+      btnCapture.disabled = true;
+    }
+  }
+
+  function flipCamera() {
+    facingMode = facingMode === 'environment' ? 'user' : 'environment';
+    startCamera(facingMode);
+  }
+
+  function capture() {
+    canvas.width  = video.videoWidth  || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    // Mirror if front camera
+    if (facingMode === 'user') {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(video, 0, 0);
+    capturedBase64 = canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
+
+    capturedImg.src = 'data:image/jpeg;base64,' + capturedBase64;
+    capturedImg.style.display = 'block';
+    video.style.display = 'none';
+    scanLine.style.display = 'none';
+    focusRing.style.display = 'none';
+
+    // Switch to review UI
+    shutterRow.style.display   = 'none';
+    modeRow.style.display      = 'none';
+    hintText.style.display     = 'none';
+    btnAnalyze.style.display   = 'flex';
+    btnRetake.style.display    = 'flex';
+    resultOverlay.classList.remove('show');
+  }
+
+  function retake() {
+    capturedImg.style.display  = 'none';
+    video.style.display        = 'block';
+    scanLine.style.display     = 'block';
+    focusRing.style.display    = 'block';
+
+    shutterRow.style.display   = 'flex';
+    modeRow.style.display      = 'flex';
+    hintText.style.display     = 'block';
+    btnAnalyze.style.display   = 'none';
+    btnRetake.style.display    = 'none';
+    resultOverlay.classList.remove('show');
+    capturedBase64 = null;
+  }
+
+  async function analyze() {
+    if (!capturedBase64) return;
+
+    loading.classList.add('show');
+    btnRetake.disabled  = true;
+    btnAnalyze.disabled = true;
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 50,
+          system: 'Você é um detector de cachorro quente (hot dog). Analise a imagem e responda APENAS com "SIM" se houver um cachorro quente (hot dog, salsicha em pão) na imagem, ou "NAO" se não houver. Não escreva mais nada além de SIM ou NAO.',
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: capturedBase64 } },
+              { type: 'text', text: 'Tem cachorro quente nessa imagem?' }
+            ]
+          }]
+        })
+      });
+
+      const data = await res.json();
+      const answer = (data.content?.[0]?.text || '').trim().toUpperCase();
+      showResult(answer.startsWith('SIM'));
+
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão. Verifique a internet e tente novamente.');
+    } finally {
+      loading.classList.remove('show');
+      btnRetake.disabled  = false;
+      btnAnalyze.disabled = false;
+    }
+  }
+
+  function showResult(isHotdog) {
+    resultPanel.className = 'result-panel ' + (isHotdog ? 'yes' : 'no');
+
+    if (isHotdog) {
+      resultEmoji.textContent = '🌭';
+      resultLabel.textContent = 'Detectado';
+      resultName.textContent  = 'Cachorro Quente';
+      resultSub.textContent   = 'Hot dog identificado na imagem';
+      resultCheck.textContent = '✓';
+    } else {
+      resultEmoji.textContent = '❌';
+      resultLabel.textContent = 'Não detectado';
+      resultName.textContent  = 'Não é Hot Dog';
+      resultSub.textContent   = 'Nenhum cachorro quente encontrado';
+      resultCheck.textContent = '✕';
+    }
+
+    resultOverlay.classList.add('show');
+  }
+
+  startCamera();
+</script>
+</body>
+</html>
